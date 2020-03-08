@@ -459,7 +459,7 @@ namespace NetCoreServer
         /// <param name="body">Body string content (default is "")</param>
         public HttpResponse SetBody(string body = "")
         {
-            int length = String.IsNullOrEmpty(body) ? 0 : Encoding.UTF8.GetByteCount(body);
+            int length = string.IsNullOrEmpty(body) ? 0 : Encoding.UTF8.GetByteCount(body);
 
             // Append content length header
             SetHeader("Content-Length", length.ToString());
