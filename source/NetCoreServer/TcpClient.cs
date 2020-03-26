@@ -3,6 +3,7 @@ using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace NetCoreServer
 {
@@ -339,7 +340,6 @@ namespace NetCoreServer
         private bool _receiving;
         private Buffer _receiveBuffer;
         private SocketAsyncEventArgs _receiveEventArg;
-        private int _receiveThreadId;
         // Send buffer
         private readonly object _sendLock = new object();
         private bool _sending;
@@ -347,7 +347,6 @@ namespace NetCoreServer
         private Buffer _sendBufferFlush;
         private SocketAsyncEventArgs _sendEventArg;
         private long _sendBufferFlushOffset;
-        private int _sendThreadId;
 
         /// <summary>
         /// Send data to the server (synchronous)
@@ -438,10 +437,7 @@ namespace NetCoreServer
             }
 
             // Try to send the main buffer
-            if (Thread.CurrentThread.ManagedThreadId == _sendThreadId)
-                ThreadPool.QueueUserWorkItem(_ => TrySend());
-            else
-                TrySend();
+            Task.Factory.StartNew(TrySend);
 
             return true;
         }
@@ -514,10 +510,7 @@ namespace NetCoreServer
         public virtual void ReceiveAsync()
         {
             // Try to receive datagram
-            if (Thread.CurrentThread.ManagedThreadId == _sendThreadId)
-                ThreadPool.QueueUserWorkItem(_ => TryReceive());
-            else
-                TryReceive();
+            TryReceive();
         }
 
         /// <summary>
@@ -531,16 +524,22 @@ namespace NetCoreServer
             if (!IsConnected)
                 return;
 
-            try
+            bool process = true;
+
+            while (process)
             {
-                // Async receive with the receive handler
-                _receiving = true;
-                _receiveEventArg.SetBuffer(_receiveBuffer.Data, 0, (int)_receiveBuffer.Capacity);
-                _receiveThreadId = Thread.CurrentThread.ManagedThreadId;
-                if (!Socket.ReceiveAsync(_receiveEventArg))
-                    ProcessReceive(_receiveEventArg);
+                process = false;
+
+                try
+                {
+                    // Async receive with the receive handler
+                    _receiving = true;
+                    _receiveEventArg.SetBuffer(_receiveBuffer.Data, 0, (int)_receiveBuffer.Capacity);
+                    if (!Socket.ReceiveAsync(_receiveEventArg))
+                        process = ProcessReceive(_receiveEventArg);
+                }
+                catch (ObjectDisposedException) {}
             }
-            catch (ObjectDisposedException) {}
         }
 
         /// <summary>
@@ -554,41 +553,51 @@ namespace NetCoreServer
             if (!IsConnected)
                 return;
 
-            // Swap send buffers
-            if (_sendBufferFlush.IsEmpty)
+            bool process = true;
+
+            while (process)
             {
+                process = false;
+
                 lock (_sendLock)
                 {
-                    // Swap flush and main buffers
-                    _sendBufferFlush = Interlocked.Exchange(ref _sendBufferMain, _sendBufferFlush);
-                    _sendBufferFlushOffset = 0;
+                    if (_sending)
+                        return;
 
-                    // Update statistic
-                    BytesPending = 0;
-                    BytesSending += _sendBufferFlush.Size;
+                    // Swap send buffers
+                    if (_sendBufferFlush.IsEmpty)
+                    {
+                        // Swap flush and main buffers
+                        _sendBufferFlush = Interlocked.Exchange(ref _sendBufferMain, _sendBufferFlush);
+                        _sendBufferFlushOffset = 0;
+
+                        // Update statistic
+                        BytesPending = 0;
+                        BytesSending += _sendBufferFlush.Size;
+
+                        _sending = !_sendBufferFlush.IsEmpty;
+                    }
+                    else
+                        return;
                 }
-            }
-            else
-                return;
 
-            // Check if the flush buffer is empty
-            if (_sendBufferFlush.IsEmpty)
-            {
-                // Call the empty send buffer handler
-                OnEmpty();
-                return;
-            }
+                // Check if the flush buffer is empty
+                if (_sendBufferFlush.IsEmpty)
+                {
+                    // Call the empty send buffer handler
+                    OnEmpty();
+                    return;
+                }
 
-            try
-            {
-                // Async write with the write handler
-                _sending = true;
-                _sendEventArg.SetBuffer(_sendBufferFlush.Data, (int)_sendBufferFlushOffset, (int)(_sendBufferFlush.Size - _sendBufferFlushOffset));
-                _sendThreadId = Thread.CurrentThread.ManagedThreadId;
-                if (!Socket.SendAsync(_sendEventArg))
-                    ProcessSend(_sendEventArg);
+                try
+                {
+                    // Async write with the write handler
+                    _sendEventArg.SetBuffer(_sendBufferFlush.Data, (int)_sendBufferFlushOffset, (int)(_sendBufferFlush.Size - _sendBufferFlushOffset));
+                    if (!Socket.SendAsync(_sendEventArg))
+                        process = ProcessSend(_sendEventArg);
+                }
+                catch (ObjectDisposedException) {}
             }
-            catch (ObjectDisposedException) {}
         }
 
         /// <summary>
@@ -625,10 +634,12 @@ namespace NetCoreServer
                     ProcessConnect(e);
                     break;
                 case SocketAsyncOperation.Receive:
-                    ProcessReceive(e);
+                    if (ProcessReceive(e))
+                        TryReceive();
                     break;
                 case SocketAsyncOperation.Send:
-                    ProcessSend(e);
+                    if (ProcessSend(e))
+                        TrySend();
                     break;
                 default:
                     throw new ArgumentException("The last operation completed on the socket was not a receive or send");
@@ -687,12 +698,10 @@ namespace NetCoreServer
         /// <summary>
         /// This method is invoked when an asynchronous receive operation completes
         /// </summary>
-        private void ProcessReceive(SocketAsyncEventArgs e)
+        private bool ProcessReceive(SocketAsyncEventArgs e)
         {
-            _receiving = false;
-
             if (!IsConnected)
-                return;
+                return false;
 
             long size = e.BytesTransferred;
 
@@ -705,20 +714,19 @@ namespace NetCoreServer
                 // Call the buffer received handler
                 OnReceived(_receiveBuffer.Data, 0, size);
 
-                // Reset the receive thread Id
-                _receiveThreadId = 0;
-
                 // If the receive buffer is full increase its size
                 if (_receiveBuffer.Capacity == size)
                     _receiveBuffer.Reserve(2 * size);
             }
+
+            _receiving = false;
 
             // Try to receive again if the client is valid
             if (e.SocketError == SocketError.Success)
             {
                 // If zero is returned from a read operation, the remote end has closed the connection
                 if (size > 0)
-                    TryReceive();
+                    return true;
                 else
                     DisconnectAsync();
             }
@@ -727,17 +735,17 @@ namespace NetCoreServer
                 SendError(e.SocketError);
                 DisconnectAsync();
             }
+
+            return false;
         }
 
         /// <summary>
         /// This method is invoked when an asynchronous send operation completes
         /// </summary>
-        private void ProcessSend(SocketAsyncEventArgs e)
+        private bool ProcessSend(SocketAsyncEventArgs e)
         {
-            _sending = false;
-
             if (!IsConnected)
-                return;
+                return false;
 
             long size = e.BytesTransferred;
 
@@ -761,18 +769,18 @@ namespace NetCoreServer
 
                 // Call the buffer sent handler
                 OnSent(size, BytesPending + BytesSending);
-
-                // Reset the send thread Id
-                _sendThreadId = 0;
             }
+
+            _sending = false;
 
             // Try to send again if the client is valid
             if (e.SocketError == SocketError.Success)
-                TrySend();
+                return true;
             else
             {
                 SendError(e.SocketError);
                 DisconnectAsync();
+                return false;
             }
         }
 
