@@ -704,9 +704,13 @@ namespace NetCoreServer
                 _sending = false;
                 Debug.WriteLine("Clearing _isSending");
 
-                // Try to send again if the session is valid
-                if (!result.CompletedSynchronously)
+                //// Try to send again if the session is valid
+                //if (!result.CompletedSynchronously)
+                //    TrySend();
+                if (_sendBufferMain.IsEmpty == false)
+                {
                     TrySend();
+                }
             }
             catch (Exception)
             {

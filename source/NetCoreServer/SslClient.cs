@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Diagnostics;
 using System.Net;
 using System.Net.Security;
 using System.Net.Sockets;
@@ -363,6 +364,8 @@ namespace NetCoreServer
         /// <returns>'true' if the client was successfully connected, 'false' if the client failed to connect</returns>
         public virtual bool ConnectAsync()
         {
+            Debug.WriteLine("===============ConnectAsync==============");
+
             if (IsConnected || IsHandshaked || IsConnecting || IsHandshaking)
                 return false;
 
