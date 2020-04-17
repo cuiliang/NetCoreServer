@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Diagnostics;
 using System.Net.Security;
 using System.Net.Sockets;
 using System.Text;
@@ -319,7 +320,11 @@ namespace NetCoreServer
         /// </summary>
         /// <param name="buffer">Buffer to send</param>
         /// <returns>'true' if the data was successfully sent, 'false' if the session is not connected</returns>
-        public virtual bool SendAsync(byte[] buffer) { return SendAsync(buffer, 0, buffer.Length); }
+        public virtual bool SendAsync(byte[] buffer)
+        {
+            Debug.WriteLine("SendAsync(byte[] buffer) Sending Bytes:" + buffer.Length);
+            return SendAsync(buffer, 0, buffer.Length);
+        }
 
         /// <summary>
         /// Send data to the client (asynchronous)
@@ -331,10 +336,17 @@ namespace NetCoreServer
         public virtual bool SendAsync(byte[] buffer, long offset, long size)
         {
             if (!IsHandshaked)
+            {
+                Debug.WriteLine("Return Pos 1");
                 return false;
+            }
+
 
             if (size == 0)
+            {
+                Debug.WriteLine("Return Pos 2");
                 return true;
+            }
 
             lock (_sendLock)
             {
@@ -349,7 +361,10 @@ namespace NetCoreServer
 
                 // Avoid multiple send handlers
                 if (!sendRequired)
+                {
+                    Debug.WriteLine("Return Pos 3");
                     return true;
+                }
             }
 
             // Try to send the main buffer
@@ -465,15 +480,24 @@ namespace NetCoreServer
         private void TrySend()
         {
             if (_sending)
+            {
+                Debug.WriteLine("Return Pos 4");
                 return;
+            }
 
             if (!IsHandshaked)
+            {
+                Debug.WriteLine("Return Pos 5");
                 return;
+            }
 
             lock (_sendLock)
             {
                 if (_sending)
+                {
+                    Debug.WriteLine("Return Pos 6");
                     return;
+                }
 
                 // Swap send buffers
                 if (_sendBufferFlush.IsEmpty)
@@ -489,15 +513,22 @@ namespace NetCoreServer
                         BytesSending += _sendBufferFlush.Size;
 
                         _sending = !_sendBufferFlush.IsEmpty;
+
+                        Debug.WriteLine($"_sending is {_sending}" );
                     }
                 }
                 else
+                {
+                    Debug.WriteLine("Return Pos 7");
                     return;
+                }
             }
 
             // Check if the flush buffer is empty
             if (_sendBufferFlush.IsEmpty)
             {
+                Debug.WriteLine("Return Pos 8");
+
                 // Call the empty send buffer handler
                 OnEmpty();
                 return;
@@ -505,6 +536,8 @@ namespace NetCoreServer
 
             try
             {
+                Debug.WriteLine("Writing to sslStream Bytes:" + (int)(_sendBufferFlush.Size - _sendBufferFlushOffset));
+
                 // Async write with the write handler
                 _sslStream.BeginWrite(_sendBufferFlush.Data, (int)_sendBufferFlushOffset, (int)(_sendBufferFlush.Size - _sendBufferFlushOffset), ProcessSend, _sslStreamId);
             }
@@ -669,6 +702,7 @@ namespace NetCoreServer
                 }
 
                 _sending = false;
+                Debug.WriteLine("Clearing _isSending");
 
                 // Try to send again if the session is valid
                 if (!result.CompletedSynchronously)
