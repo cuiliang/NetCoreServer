@@ -125,6 +125,9 @@ namespace NetCoreServer
         {
             Socket = socket;
 
+
+
+
             // Update the session socket disposed flag
             IsSocketDisposed = false;
 
@@ -645,8 +648,9 @@ namespace NetCoreServer
                 // If zero is returned from a read operation, the remote end has closed the connection
                 if (size > 0)
                 {
-                    if (!result.CompletedSynchronously)
-                        TryReceive();
+                    //if (!result.CompletedSynchronously)  
+                    
+                    TryReceive();
                 }
                 else
                     Disconnect();
@@ -707,10 +711,10 @@ namespace NetCoreServer
                 //// Try to send again if the session is valid
                 //if (!result.CompletedSynchronously)
                 //    TrySend();
-                if (_sendBufferMain.IsEmpty == false)
-                {
+                //if (_sendBufferMain.IsEmpty == false)
+                //{
                     TrySend();
-                }
+                //}
             }
             catch (Exception)
             {
