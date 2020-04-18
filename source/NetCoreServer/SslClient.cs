@@ -845,7 +845,7 @@ namespace NetCoreServer
                 // If zero is returned from a read operation, the remote end has closed the connection
                 if (size > 0)
                 {
-                    if (!result.CompletedSynchronously)
+                    //if (!result.CompletedSynchronously)
                         TryReceive();
                 }
                 else
@@ -903,7 +903,7 @@ namespace NetCoreServer
                 _sending = false;
 
                 // Try to send again if the client is valid
-                if (!result.CompletedSynchronously)
+                //if (!result.CompletedSynchronously)
                     TrySend();
             }
             catch (Exception)
