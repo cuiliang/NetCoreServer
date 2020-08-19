@@ -298,26 +298,28 @@ namespace NetCoreServer
                 try
                 {
                     // Shutdown the SSL stream
-                    _sslStream.ShutdownAsync().Wait();
+                    _sslStream?.ShutdownAsync().Wait();
                 }
                 catch (Exception) {}
 
                 // Dispose the SSL stream & buffer
-                _sslStream.Dispose();
+                _sslStream?.Dispose();
                 _sslStreamId = null;
 
                 try
                 {
                     // Shutdown the socket associated with the client
-                    Socket.Shutdown(SocketShutdown.Both);
+                    Socket?.Shutdown(SocketShutdown.Both);
                 }
                 catch (SocketException) {}
 
                 // Close the client socket
-                Socket.Close();
+                Socket?.Close();
 
                 // Dispose the client socket
-                Socket.Dispose();
+                Socket?.Dispose();
+
+                Socket = null;
 
                 // Update the client socket disposed flag
                 IsSocketDisposed = true;
