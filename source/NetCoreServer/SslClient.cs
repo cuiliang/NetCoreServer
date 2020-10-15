@@ -7,6 +7,8 @@ using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using log4net;
+using Quicker.Utilities.Ext;
 
 namespace NetCoreServer
 {
@@ -16,6 +18,9 @@ namespace NetCoreServer
     /// <remarks>Thread-safe</remarks>
     public class SslClient : IDisposable
     {
+        // _logger
+        private static readonly ILog _logger = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+
         /// <summary>
         /// Initialize SSL client with a given server IP address and port number
         /// </summary>
@@ -718,56 +723,65 @@ namespace NetCoreServer
         /// </summary>
         private void ProcessConnect(SocketAsyncEventArgs e)
         {
-            IsConnecting = false;
-
-            if (e.SocketError == SocketError.Success)
+            try
             {
-                // Apply the option: keep alive
-                if (OptionKeepAlive)
-                    Socket.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.KeepAlive, true);
-                // Apply the option: no delay
-                if (OptionNoDelay)
-                    Socket.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.NoDelay, true);
+                IsConnecting = false;
 
-                // Prepare receive & send buffers
-                _receiveBuffer.Reserve(OptionReceiveBufferSize);
-                _sendBufferMain.Reserve(OptionSendBufferSize);
-                _sendBufferFlush.Reserve(OptionSendBufferSize);
-
-                // Reset statistic
-                BytesPending = 0;
-                BytesSending = 0;
-                BytesSent = 0;
-                BytesReceived = 0;
-
-                // Update the connected flag
-                IsConnected = true;
-
-                // Call the client connected handler
-                OnConnected();
-
-                try
+                if (e.SocketError == SocketError.Success)
                 {
-                    // Create SSL stream
-                    _sslStreamId = Guid.NewGuid();
-                    _sslStream = (Context.CertificateValidationCallback != null) ? new SslStream(new NetworkStream(Socket, false), false, Context.CertificateValidationCallback) : new SslStream(new NetworkStream(Socket, false), false);
+                    // Apply the option: keep alive
+                    if (OptionKeepAlive)
+                        Socket.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.KeepAlive, true);
+                    // Apply the option: no delay
+                    if (OptionNoDelay)
+                        Socket.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.NoDelay, true);
 
-                    // Begin the SSL handshake
-                    IsHandshaking = true;
-                    _sslStream.BeginAuthenticateAsClient(Address, Context.Certificates ?? new X509CertificateCollection(new[] { Context.Certificate }), Context.Protocols, true, ProcessHandshake, _sslStreamId);
+                    // Prepare receive & send buffers
+                    _receiveBuffer.Reserve(OptionReceiveBufferSize);
+                    _sendBufferMain.Reserve(OptionSendBufferSize);
+                    _sendBufferFlush.Reserve(OptionSendBufferSize);
+
+                    // Reset statistic
+                    BytesPending = 0;
+                    BytesSending = 0;
+                    BytesSent = 0;
+                    BytesReceived = 0;
+
+                    // Update the connected flag
+                    IsConnected = true;
+
+                    // Call the client connected handler
+                    OnConnected();
+
+                    try
+                    {
+                        // Create SSL stream
+                        _sslStreamId = Guid.NewGuid();
+                        _sslStream = (Context.CertificateValidationCallback != null) ? new SslStream(new NetworkStream(Socket, false), false, Context.CertificateValidationCallback) : new SslStream(new NetworkStream(Socket, false), false);
+
+                        // Begin the SSL handshake
+                        IsHandshaking = true;
+                        _sslStream.BeginAuthenticateAsClient(Address, Context.Certificates ?? new X509CertificateCollection(new[] { Context.Certificate }), Context.Protocols, true, ProcessHandshake, _sslStreamId);
+                    }
+                    catch (Exception)
+                    {
+                        SendError(SocketError.NotConnected);
+                        DisconnectAsync();
+                    }
                 }
-                catch (Exception)
+                else
                 {
-                    SendError(SocketError.NotConnected);
-                    DisconnectAsync();
+                    // Call the client disconnected handler
+                    SendError(e.SocketError);
+                    OnDisconnected();
                 }
             }
-            else
+            catch (Exception exception)
             {
-                // Call the client disconnected handler
-                SendError(e.SocketError);
-                OnDisconnected();
+               _logger.Warn("ProcessConnect出错：" + exception.GetMessageWithInner(), exception);
+               OnDisconnected();
             }
+            
         }
 
         /// <summary>
