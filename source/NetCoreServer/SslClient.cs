@@ -7,8 +7,8 @@ using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using log4net;
-using Quicker.Utilities.Ext;
+//using log4net;
+//using Quicker.Utilities.Ext;
 
 namespace NetCoreServer
 {
@@ -19,7 +19,7 @@ namespace NetCoreServer
     public class SslClient : IDisposable
     {
         // _logger
-        private static readonly ILog _logger = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        //private static readonly ILog _logger = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         /// <summary>
         /// Initialize SSL client with a given server IP address and port number
@@ -778,7 +778,7 @@ namespace NetCoreServer
             }
             catch (Exception exception)
             {
-               _logger.Warn("ProcessConnect出错：" + exception.GetMessageWithInner(), exception);
+               //_logger.Warn("ProcessConnect出错：" + exception.GetMessageWithInner(), exception);
                OnDisconnected();
             }
             
